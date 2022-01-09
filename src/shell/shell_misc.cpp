@@ -442,7 +442,11 @@ bool DOS_Shell::Execute(char * name,char * args) {
 		}
 		/* Run the .exe or .com file from the shell */
 		/* Allocate some stack space for tables in physical memory */
+#ifndef C_IDA_DEBUG
 		reg_sp-=0x200;
+#else
+		reg_sp-=0x300;
+#endif
 		//Add Parameter block
 		DOS_ParamBlock block(SegPhys(ss)+reg_sp);
 		block.Clear();

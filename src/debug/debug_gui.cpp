@@ -25,7 +25,9 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include <stdio.h>
+#ifndef C_IDA_DEBUG
 #include <curses.h>
+#endif
 #include <string.h>
 
 #include "support.h"
@@ -53,7 +55,6 @@ extern int old_cursor_state;
 
 
 void DEBUG_ShowMsg(char const* format,...) {
-	
 	char buf[512];
 	va_list msg;
 	va_start(msg,format);
@@ -66,6 +67,8 @@ void DEBUG_ShowMsg(char const* format,...) {
 
 	if(debuglog) fprintf(debuglog,"%s",buf);
 
+	printf("%s",buf);
+#ifndef C_IDA_DEBUG
 	if (logBuffPos!=logBuff.end()) {
 		logBuffPos=logBuff.end();
 		DEBUG_RefreshPage(0);
@@ -78,9 +81,11 @@ void DEBUG_ShowMsg(char const* format,...) {
 	logBuffPos = logBuff.end();
 	wprintw(dbg.win_out,"%s",buf);
 	wrefresh(dbg.win_out);
+#endif
 }
 
 void DEBUG_RefreshPage(char scroll) {
+#ifndef C_IDA_DEBUG
 	if (scroll==-1 && logBuffPos!=logBuff.begin()) logBuffPos--;
 	else if (scroll==1 && logBuffPos!=logBuff.end()) logBuffPos++;
 
@@ -99,6 +104,7 @@ void DEBUG_RefreshPage(char scroll) {
 	}
 	mvwprintw(dbg.win_out,maxy-1, 0, "");
 	wrefresh(dbg.win_out);
+#endif
 }
 
 void LOG::operator() (char const* format, ...){
@@ -115,6 +121,7 @@ void LOG::operator() (char const* format, ...){
 
 
 static void Draw_RegisterLayout(void) {
+#ifndef C_IDA_DEBUG
 	mvwaddstr(dbg.win_reg,0,0,"EAX=");
 	mvwaddstr(dbg.win_reg,1,0,"EBX=");
 	mvwaddstr(dbg.win_reg,2,0,"ECX=");
@@ -138,10 +145,12 @@ static void Draw_RegisterLayout(void) {
 	mvwaddstr(dbg.win_reg,2,68,"IOPL");
 
 	mvwaddstr(dbg.win_reg,1,52,"C  Z  S  O  A  P  D  I  T ");
+#endif
 }
 
 
 static void DrawBars(void) {
+#ifndef C_IDA_DEBUG
 	if (has_colors()) {
 		attrset(COLOR_PAIR(PAIR_BLACK_BLUE));
 	}
@@ -156,11 +165,13 @@ static void DrawBars(void) {
 	/* Show the Output OverView */
 	mvaddstr(dbg.win_out->_begy-1,0, "---(OutPut/Input    Scroll: home/end    )---");
 	attrset(0);
+#endif
 }
 
 
 
 static void MakeSubWindows(void) {
+#ifndef C_IDA_DEBUG
 	/* The Std output win should go in bottem */
 	/* Make all the subwindows */
 	int win_main_maxy, win_main_maxx; getmaxyx(dbg.win_main,win_main_maxy,win_main_maxx);
@@ -184,6 +195,7 @@ static void MakeSubWindows(void) {
 	DrawBars();
 	Draw_RegisterLayout();
 	refresh();
+#endif
 }
 
 static void MakePairs(void) {
@@ -264,6 +276,7 @@ void LOG_StartUp(void) {
 
 
 void DBGUI_StartUp(void) {
+#ifndef C_IDA_DEBUG
 	/* Start the main window */
 	dbg.win_main=initscr();
 	cbreak();       /* take input chars one at a time, no wait for \n */
@@ -276,10 +289,12 @@ void DBGUI_StartUp(void) {
 	#endif
 	old_cursor_state = curs_set(0);
 	start_color();
+#endif
 	cycle_count=0;
+#ifndef C_IDA_DEBUG
 	MakePairs();
 	MakeSubWindows();
-
+#endif
 }
 
 #endif

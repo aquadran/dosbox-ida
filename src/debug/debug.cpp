@@ -50,6 +50,10 @@ using namespace std;
 #include "keyboard.h"
 #include "setup.h"
 
+#ifdef C_IDA_DEBUG
+#include "server2.h" //ida interface functions.
+#endif
+
 #ifdef WIN32
 void WIN32_Console();
 #else
@@ -72,6 +76,16 @@ static void LogPages(char* selname);
 static void LogCPUInfo(void);
 static void OutputVecTable(char* filename);
 static void DrawVariables(void);
+
+#ifdef C_IDA_DEBUG
+Bits DEBUG_RemoteStep(void);
+bool DEBUG_AddBreakPoint(Bit32u address, bool once);
+bool DEBUG_AddMemBreakPoint(Bit32u address);
+bool DEBUG_DelBreakPoint(PhysPt address);
+int DEBUG_Continue(void);
+int DEBUG_ContinueWithoutDebug();
+string DEBUG_GetFileName();
+#endif
 
 char* AnalyzeInstruction(char* inst, bool saveSelector);
 Bit32u GetHexValue(char* str, char*& hex);
@@ -101,6 +115,9 @@ class DEBUG;
 DEBUG*	pDebugcom	= 0;
 bool	exitLoop	= false;
 
+#ifdef C_IDA_DEBUG
+static string debug_filename;
+#endif
 
 // Heavy Debugging Vars for logging
 #if C_HEAVY_DEBUG
@@ -129,11 +146,13 @@ static bool debugging;
 
 
 static void SetColor(Bitu test) {
+#ifndef C_IDA_DEBUG
 	if (test) {
 		if (has_colors()) { wattrset(dbg.win_reg,COLOR_PAIR(PAIR_BYELLOW_BLACK));}
 	} else {
 		if (has_colors()) { wattrset(dbg.win_reg,0);}
 	}
+#endif
 }
 
 struct SCodeViewData {	
@@ -153,6 +172,10 @@ struct SCodeViewData {
 static Bit16u	dataSeg;
 static Bit32u	dataOfs;
 static bool		showExtend = true;
+
+#ifdef C_IDA_DEBUG
+Bit32u GetAddress(Bit16u seg, Bit32u offset);
+#endif
 
 /***********/
 /* Helpers */
@@ -417,7 +440,13 @@ bool CBreakpoint::CheckBreakpoint(Bitu seg, Bitu off)
 	CBreakpoint* bp;
 	for(i=BPoints.begin(); i != BPoints.end(); i++) {
 		bp = (*i);
-		if ((bp->GetType()==BKPNT_PHYSICAL) && bp->IsActive() && (bp->GetSegment()==seg) && (bp->GetOffset()==off)) {
+		if ((bp->GetType()==BKPNT_PHYSICAL) && bp->IsActive() &&
+#ifdef C_IDA_DEBUG
+			bp->GetLocation() == GetAddress(seg,off)
+#else
+			(bp->GetSegment()==seg) && (bp->GetOffset()==off)
+#endif
+		) {
 			// Ignore Once ?
 			if (ignoreOnce==bp) {
 				ignoreOnce=0;
@@ -431,7 +460,10 @@ bool CBreakpoint::CheckBreakpoint(Bitu seg, Bitu off)
 				bp->Activate(false);
 				delete bp;
 			} else {
+#ifndef C_IDA_DEBUG
+				// ERIC what uses this ignore once system?
 				ignoreOnce = bp;
+#endif
 			};
 			return true;
 		} 
@@ -512,6 +544,10 @@ void CBreakpoint::DeleteAll()
 	for(i=BPoints.begin(); i != BPoints.end(); i++) {
 		bp = (*i);
 		bp->Activate(false);
+#ifdef C_IDA_DEBUG
+		if(ignoreOnce == bp)
+			ignoreOnce = 0;
+#endif
 		delete bp;
 	};
 	(BPoints.clear)();
@@ -529,6 +565,10 @@ bool CBreakpoint::DeleteByIndex(Bit16u index)
 			bp = (*i);
 			(BPoints.erase)(i);
 			bp->Activate(false);
+#ifdef C_IDA_DEBUG
+			if(ignoreOnce == bp)
+				ignoreOnce = 0;
+#endif
 			delete bp;
 			return true;
 		}
@@ -547,6 +587,10 @@ bool CBreakpoint::DeleteBreakpoint(PhysPt where)
 		if ((bp->GetType()==BKPNT_PHYSICAL) && (bp->GetLocation()==where)) {
 			(BPoints.erase)(i);
 			bp->Activate(false);
+#ifdef C_IDA_DEBUG
+			if(ignoreOnce == bp)
+				ignoreOnce = 0;
+#endif
 			delete bp;
 			return true;
 		}
@@ -628,6 +672,11 @@ bool DEBUG_IntBreakpoint(Bit8u intNum)
 	if (!CBreakpoint::CheckIntBreakpoint(where,intNum,reg_ah)) return false;
 	// Found. Breakpoint is valid
 	CBreakpoint::ActivateBreakpoints(where,false);	// Deactivate all breakpoints
+
+#ifdef C_IDA_DEBUG
+	idados_hit_breakpoint(where);
+#endif
+
 	return true;
 };
 
@@ -652,7 +701,9 @@ static bool StepOver()
 bool DEBUG_ExitLoop(void)
 {
 #if C_HEAVY_DEBUG
+#ifndef C_IDA_DEBUG
 	DrawVariables();
+#endif
 #endif
 
 	if (exitLoop) {
@@ -667,7 +718,7 @@ bool DEBUG_ExitLoop(void)
 /********************/
 
 static void DrawData(void) {
-	
+#ifndef C_IDA_DEBUG
 	Bit8u ch;
 	Bit32u add = dataOfs;
 	Bit32u address;
@@ -686,9 +737,11 @@ static void DrawData(void) {
 		};
 	}	
 	wrefresh(dbg.win_data);
+#endif
 };
 
 static void DrawRegisters(void) {
+#ifndef C_IDA_DEBUG
 	/* Main Registers */
 	SetColor(reg_eax!=oldregs.eax);oldregs.eax=reg_eax;mvwprintw (dbg.win_reg,0,4,"%08X",reg_eax);
 	SetColor(reg_ebx!=oldregs.ebx);oldregs.ebx=reg_ebx;mvwprintw (dbg.win_reg,1,4,"%08X",reg_ebx);
@@ -759,9 +812,11 @@ static void DrawRegisters(void) {
 	wattrset(dbg.win_reg,0);
 	mvwprintw(dbg.win_reg,3,60,"%u       ",cycle_count);
 	wrefresh(dbg.win_reg);
+#endif
 };
 
 static void DrawCode(void) {
+#ifndef C_IDA_DEBUG
 	bool saveSel; 
 	Bit32u disEIP = codeViewData.useEIP;
 	PhysPt start  = GetAddress(codeViewData.useCS,codeViewData.useEIP);
@@ -846,6 +901,7 @@ static void DrawCode(void) {
 	}
 
 	wrefresh(dbg.win_code);
+#endif
 }
 
 static void SetCodeWinStart()
@@ -1492,6 +1548,7 @@ char* AnalyzeInstruction(char* inst, bool saveSelector) {
 
 
 Bit32u DEBUG_CheckKeys(void) {
+#ifndef C_IDA_DEBUG
 	Bits ret=0;
 	int key=getch();
 	if (key>0) {
@@ -1655,6 +1712,9 @@ Bit32u DEBUG_CheckKeys(void) {
 		DEBUG_DrawScreen();
 	}
 	return ret;
+#else
+	return 0;
+#endif
 };
 
 Bitu DEBUG_Loop(void) {
@@ -1672,7 +1732,31 @@ Bitu DEBUG_Loop(void) {
 		DOSBOX_SetNormalLoop();
 		return 0;
 	}
+
+#ifndef C_IDA_DEBUG
 	return DEBUG_CheckKeys();
+#else
+	Bits ret;
+
+	//idados ret = DEBUG_RemoteHandleCMD();
+	ret = idados_handle_command();
+
+	if (ret<0) return ret;
+	if (ret>0){
+		printf("CS:IP = %x\n", GetAddress(SegValue(cs), (unsigned long)reg_eip));
+		ret=(*CallBack_Handlers[ret])();
+		if (ret) {
+			exitLoop=true;
+			CPU_Cycles=CPU_CycleLeft=0;
+			return ret;
+		}
+	}
+
+	if(idados_is_running())
+		DEBUG_Continue();
+
+	return 0;
+#endif
 }
 
 void DEBUG_Enable(bool pressed) {
@@ -1683,18 +1767,22 @@ void DEBUG_Enable(bool pressed) {
 	SetCodeWinStart();
 	DEBUG_DrawScreen();
 	DOSBOX_SetLoop(&DEBUG_Loop);
+#ifndef C_IDA_DEBUG
 	if(!showhelp) { 
 		showhelp=true;
 		DEBUG_ShowMsg("***| TYPE HELP (+ENTER) TO GET AN OVERVIEW OF ALL COMMANDS |***\n");
 	}
+#endif
 	KEYBOARD_ClrBuffer();
 }
 
 void DEBUG_DrawScreen(void) {
+#ifndef C_IDA_DEBUG
 	DrawData();
 	DrawCode();
 	DrawRegisters();
 	DrawVariables();
+#endif
 }
 
 static void DEBUG_RaiseTimerIrq(void) {
@@ -1956,6 +2044,9 @@ public:
 	
 		cmd->FindCommand(1,temp_line);
 		safe_strncpy(filename,temp_line.c_str(),128);
+#ifdef C_IDA_DEBUG
+		debug_filename = string(filename);
+#endif
 		// Read commandline
 		Bit16u i	=2;
 		bool ok		= false; 
@@ -1993,6 +2084,9 @@ void DEBUG_CheckExecuteBreakpoint(Bit16u seg, Bit32u off)
 		CBreakpoint::AddBreakpoint(seg,off,true);		
 		CBreakpoint::ActivateBreakpoints(SegPhys(cs)+reg_eip,true);	
 		pDebugcom = 0;
+#ifdef C_IDA_DEBUG
+		//ERIC FIXME can we safely comment out this line so we can use pDebugcom in debug_remote_inc.h
+#endif
 	};
 };
 
@@ -2011,6 +2105,7 @@ static void DEBUG_ProgramStart(Program * * make) {
 // INIT 
 
 void DEBUG_SetupConsole(void) {
+#ifndef C_IDA_DEBUG
 	#ifdef WIN32
 	WIN32_Console();
 	#else
@@ -2018,9 +2113,10 @@ void DEBUG_SetupConsole(void) {
 	printf("\e[8;50;80t"); //resize terminal
 	fflush(NULL);
 	#endif	
+#endif
 	memset((void *)&dbg,0,sizeof(dbg));
 	debugging=false;
-	dbg.active_win=3;
+//	dbg.active_win=3;
 	input_count=0;
 	/* Start the Debug Gui */
 	DBGUI_StartUp();
@@ -2029,6 +2125,7 @@ void DEBUG_SetupConsole(void) {
 static void DEBUG_ShutDown(Section * /*sec*/) {
 	CBreakpoint::DeleteAll();
 	CDebugVar::DeleteAll();
+#ifndef C_IDA_DEBUG
 	curs_set(old_cursor_state);
 	#ifndef WIN32
 	tcsetattr(0, TCSANOW,&consolesettings);
@@ -2036,6 +2133,11 @@ static void DEBUG_ShutDown(Section * /*sec*/) {
 	printf("\ec");
 	fflush(NULL);
 	#endif
+#endif
+
+#ifdef C_IDA_DEBUG
+	idados_term();
+#endif
 }
 
 Bitu debugCallback;
@@ -2055,6 +2157,11 @@ void DEBUG_Init(Section* sec) {
 	CALLBACK_Setup(debugCallback,DEBUG_EnableDebugger,CB_RETF,"debugger");
 	/* shutdown function */
 	sec->AddDestroyFunction(&DEBUG_ShutDown);
+
+#ifdef C_IDA_DEBUG
+	/*remote init */
+	idados_init();
+#endif
 }
 
 // DEBUGGING VAR STUFF
@@ -2392,13 +2499,94 @@ bool DEBUG_HeavyIsBreakpoint(void) {
 		return false;
 	}
 	if (CBreakpoint::CheckBreakpoint(SegValue(cs),reg_eip)) {
-		return true;	
+#ifdef C_IDA_DEBUG
+		// Release any mouse pointer grab
+		if (mouselocked) GFX_CaptureMouse();
+
+		idados_hit_breakpoint(SegPhys(cs)+reg_eip);
+
+#endif
+		return true;
 	}
 	return false;
 }
 
 #endif // HEAVY DEBUG
 
+#ifdef C_IDA_DEBUG
+bool DEBUG_AddBreakPoint(Bit32u address, bool once)
+{
+	CBreakpoint::AddBreakpoint((Bit16u)(address / 0x10), (Bit32u)address % 0x10, once);
+
+	return true;
+}
+
+bool DEBUG_AddMemBreakPoint(Bit32u address)
+{
+	CBreakpoint::AddMemBreakpoint((Bit16u)(address / 0x10), (Bit32u)address % 0x10);
+
+	return true;
+}
+
+bool DEBUG_DelBreakPoint(PhysPt address)
+{
+	printf("delete breakpoint at %x\n", address);
+	CBreakpoint::DeleteBreakpoint(address);
+
+	return true;
+}
+
+Bits DEBUG_RemoteStep(void)
+{
+	Bits ret;
+
+	//idados r_debug.app_continue = false;
+	idados_stopped();
+
+	exitLoop = false;
+	skipFirstInstruction = true; // for heavy debugger
+	CPU_Cycles = 1;
+	ret = (*cpudecoder)();
+	//SetCodeWinStart();
+	CBreakpoint::ignoreOnce = 0;
+
+	printf("Stepping. New CS:IP = %x\n", GetAddress(SegValue(cs), (unsigned long)reg_eip));
+	return ret;
+}
+
+int DEBUG_Continue(void)
+{
+	// Run Programm
+	debugging=false;
+	CBreakpoint::ActivateBreakpoints(SegPhys(cs)+reg_eip,true);
+
+	ignoreAddressOnce = SegPhys(cs)+reg_eip;
+	DOSBOX_SetNormalLoop();
+
+	return 1;
+}
+
+int DEBUG_ContinueWithoutDebug()
+{
+	CBreakpoint::DeleteAll();
+	CDebugVar::DeleteAll();
+	debugging = false;
+	DOSBOX_SetNormalLoop();
+
+	return 1;
+}
+
+string DEBUG_GetFileName()
+{
+	return debug_filename;
+}
+
+void DEBUG_AppTerminated()
+{
+	//idados remote_process_terminated();
+}
+
+#endif
 
 #endif // DEBUG
 

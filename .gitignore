@@ -1,0 +1,15 @@
+*.in
+/autom*
+/aclocal*
+/config*
+/missing
+/install-sh
+/depcomp
+/compile
+*.o
+Makefile
+/stamp*
+src/dosbox
+*.deps
+*.a
+libida.dylib
