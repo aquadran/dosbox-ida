@@ -1419,6 +1419,20 @@ void GFX_LosingFocus(void) {
 	MAPPER_LosingFocus();
 }
 
+void GFX_DebuggerPullEvents() {
+	SDL_Event event;
+
+	while (SDL_PollEvent(&event)) {
+		switch (event.type) {
+		case SDL_VIDEOEXPOSE:
+			if (sdl.draw.callback) sdl.draw.callback( GFX_CallBackRedraw );
+			break;
+		default:
+			break;
+		}
+	}
+}
+
 #if defined(MACOSX)
 #define DB_POLLSKIP 3
 #else

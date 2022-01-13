@@ -4,6 +4,8 @@
 
 #include "server.h"
 #include "dosbox_debmod.h"
+#include "SDL.h"
+#include "SDL_thread.h"
 
 #if defined(_MSC_VER) || defined(__NT__)
 typedef int socklen_t;
@@ -14,6 +16,8 @@ typedef int socklen_t;
 #include "mem.h"
 rpc_server_t *g_idados_server = NULL;
 static  bool g_server_running = false;
+
+void GFX_DebuggerPullEvents();
 
 //--------------------------------------------------------------------------
 // SERVER GLOBAL VARIABLES
@@ -409,6 +413,18 @@ int idados_start_session()
     return handle_session(g_idados_server);
 }
 
+rpc_packet_t *packet;
+bool processExit;
+
+static int processThread(void *ptr) {
+    bytevec_t empty;
+    packet = g_idados_server->process_request(empty); // FIXME: "must_login" argument?
+    processExit = true;
+    return 0;
+}
+
+void VGA_ForceRefresh(Bitu /*val*/);
+
 int idados_handle_command()
 {
   bool ret = 1;
@@ -422,8 +438,16 @@ int idados_handle_command()
     dosbox_debmod_t *dm = (dosbox_debmod_t *)server->get_debugger_instance();
 
     dm->dosbox_step_ret = 0;
-    bytevec_t empty;
-    rpc_packet_t *packet = server->process_request(empty); // FIXME: "must_login" argument?
+
+    processExit = false;
+    SDL_Thread *thread = SDL_CreateThread(processThread, (void *)NULL);
+    do
+    {
+      GFX_DebuggerPullEvents();
+      SDL_Delay(1);
+    } while (!processExit);
+
+    GFX_DebuggerPullEvents();
     if (packet != NULL)
       qfree(packet);
 
