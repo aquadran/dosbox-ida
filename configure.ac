@@ -315,6 +315,12 @@ case "$host_cpu" in
     c_targetcpu="m68k"
     c_unalignedmemory=yes
     ;;
+   aarch64)
+    AC_DEFINE(C_TARGETCPU,ARMV8LE)
+    AC_MSG_RESULT(ARMv8 Little Endian 64-bit)
+    c_targetcpu="arm"
+    c_unalignedmemory=yes
+    ;;
    *)
     AC_DEFINE(C_TARGETCPU,UNKNOWN)
     AC_MSG_RESULT(unknown)
